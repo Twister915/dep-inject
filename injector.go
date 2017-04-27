@@ -18,13 +18,6 @@ type DependencyInjector struct {
 	injectors map[reflect.Type]injectorFunc
 }
 
-func cleanType(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	return t
-}
-
 func (dep *DependencyInjector) BindProvider(something interface{}, source injectorFunc) {
 	if dep.injectors == nil {
 		dep.injectors = make(map[reflect.Type]injectorFunc)
@@ -150,6 +143,43 @@ func (dep DependencyInjector) Inject(ptr interface{}) {
 
 		provider(field.Addr().Interface())
 	}
+}
+
+func (dep DependencyInjector) PreInjectAll(f interface{}) (fOut InjectedFunction) {
+	fValue := reflect.ValueOf(f)
+	if fValue .Kind() != reflect.Func {
+		panic("must pass function")
+	}
+	fType := fValue.Type()
+	inProviders := make([]func (interface{}), fType.NumIn())
+	for i := 0; i < fType.NumIn(); i++ {
+		inProviders[i], _ = dep.Provider(fType.In(i))
+	}
+	caller := func() (out []interface{}) {
+		inValues := make([]reflect.Value, len(inProviders))
+		for i := range inValues {
+			ptr := reflect.New(fType.In(i)).Interface()
+			inProviders[i](ptr)
+			inValues[i] = reflect.ValueOf(ptr).Elem()
+		}
+		returns := fValue.Call(inValues)
+		out = make([]interface{}, len(returns))
+		for i := range returns {
+			out[i] = returns[i].Interface()
+		}
+		return
+	}
+	var errIndex *int
+	for i := 0; i < fType.NumOut(); i++ {
+		if fType.Out(i).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+			errIndex = new(int)
+			*errIndex = i
+			break
+		}
+	}
+	fOut.backing = caller
+	fOut.errorIdx = errIndex
+	return
 }
 
 func (dep DependencyInjector) ChildInjector() (out *DependencyInjector) {
