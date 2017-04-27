@@ -153,7 +153,11 @@ func (dep DependencyInjector) PreInjectAll(f interface{}) (fOut InjectedFunction
 	fType := fValue.Type()
 	inProviders := make([]func (interface{}), fType.NumIn())
 	for i := 0; i < fType.NumIn(); i++ {
-		inProviders[i], _ = dep.Provider(fType.In(i))
+		var has bool
+		inProviders[i], has = dep.Provider(fType.In(i))
+		if !has {
+			panic(fmt.Sprintf("no injector for %s at %d", fType.In(i), i))
+		}
 	}
 	caller := func() (out []interface{}) {
 		inValues := make([]reflect.Value, len(inProviders))
